@@ -1,119 +1,119 @@
-name: Continuous Delivery
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
 env:
   IMAGE_NAME: ${{ github.repository }}
   REGISTRY: ghcr.io
-
 jobs:
-  build-maven:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up JDK 11
-      uses: actions/setup-java@v3
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-    - name: Build with Maven
-      working-directory: .
-      run: mvn -B package 
-
   build-docker:
-    runs-on: ubuntu-latest
     env:
       IMAGE_NAME: ${{ github.repository }}
       REGISTRY: ghcr.io
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - alias: jre-11
-            dockerfile: packaging/docker/unix/eclipse-temurin-11-jre/Dockerfile
-            tags: test
-          - alias: jre-11-alpine
-            dockerfile: packaging/docker/unix/eclipse-temurin-11-jre-alpine/Dockerfile
-            tags: test-alpine
-    name: "Build Docker image: ${{ matrix.alias }}"
-
+    name: 'Build Docker image: ${{ matrix.alias }}'
+    runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v2
-    
-    - name: Set up Docker Buildx
+    - continue-on-error: true
+      uses: actions/checkout@v2
+    - continue-on-error: true
+      name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1.5.0
-    
-    - name: Extract metadata (tags, labels) for Docker
+    - continue-on-error: true
       id: meta
+      name: Extract metadata (tags, labels) for Docker
       uses: docker/metadata-action@v3.3.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-    
-    - name: Build Docker image
+    - continue-on-error: true
+      name: Build Docker image
       uses: docker/build-push-action@v2.6.1
       with:
-        push: false
         file: ${{ matrix.dockerfile }}
-        tags: ${{ matrix.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        
-  deploy:
-    if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+        push: false
+        tags: ${{ matrix.tags }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - alias: jre-11
-            dockerfile: packaging/docker/unix/eclipse-temurin-11-jre/Dockerfile
-            tag-prefix: eclipse-temurin-11-jre-
-            tag-latest: true
-            extra-tags: ", ghcr.io/${{ github.repository }}:jre-11"
-          - alias: jre-11-alpine
-            dockerfile: packaging/docker/unix/eclipse-temurin-11-jre-alpine/Dockerfile
-            tag-prefix: eclipse-temurin-11-jre-alpine-
-            tag-latest: false
-            extra-tags: ", ghcr.io/${{ github.repository }}:alpine, ghcr.io/${{ github.repository }}:jre-11-alpine"
+        - alias: jre-11
+          dockerfile: packaging/docker/unix/eclipse-temurin-11-jre/Dockerfile
+          tags: test
+        - alias: jre-11-alpine
+          dockerfile: packaging/docker/unix/eclipse-temurin-11-jre-alpine/Dockerfile
+          tags: test-alpine
+  build-maven:
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v2
+    - continue-on-error: true
+      name: Set up JDK 11
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: '11'
+    - continue-on-error: true
+      name: Build with Maven
+      run: mvn -B package
+      working-directory: .
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    name: 'Deploy Docker Image: ${{ matrix.alias }}'
     needs:
-      - build-maven
-      - build-docker
+    - build-maven
+    - build-docker
     permissions:
       contents: read
       packages: write
-    name: "Deploy Docker Image: ${{ matrix.alias }}"
-    
-    #TODO: There is slight double build overhead, but we prevent permissions from being exposed too widely
+    runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v2
-    
-    - name: Log in to the Container registry
+    - continue-on-error: true
+      uses: actions/checkout@v2
+    - continue-on-error: true
+      name: Log in to the Container registry
       uses: docker/login-action@v1.10.0
       with:
+        password: ${{ secrets.GITHUB_TOKEN }}
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Set up Docker Buildx
+    - continue-on-error: true
+      name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1.5.0
-    
-    - name: Extract metadata (tags, labels) for Docker
+    - continue-on-error: true
       id: meta
+      name: Extract metadata (tags, labels) for Docker
       uses: docker/metadata-action@v3.3.0
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        flavor: |
-          latest=${{ matrix.tag-latest }}
+        flavor: 'latest=${{ matrix.tag-latest }}
+
           prefix=${{ matrix.tag-prefix }}
+
           suffix=
 
-    - name: Build and Deploy Docker image
+          '
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+    - continue-on-error: true
+      name: Build and Deploy Docker image
       uses: docker/build-push-action@v2.6.1
       with:
         context: .
         file: ${{ matrix.dockerfile }}
-        push: true
-        tags: ${{ steps.meta.outputs.tags }} ${{ matrix.extra-tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        push: false
+        tags: ${{ steps.meta.outputs.tags }} ${{ matrix.extra-tags }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - alias: jre-11
+          dockerfile: packaging/docker/unix/eclipse-temurin-11-jre/Dockerfile
+          extra-tags: ', ghcr.io/${{ github.repository }}:jre-11'
+          tag-latest: true
+          tag-prefix: eclipse-temurin-11-jre-
+        - alias: jre-11-alpine
+          dockerfile: packaging/docker/unix/eclipse-temurin-11-jre-alpine/Dockerfile
+          extra-tags: ', ghcr.io/${{ github.repository }}:alpine, ghcr.io/${{ github.repository
+            }}:jre-11-alpine'
+          tag-latest: false
+          tag-prefix: eclipse-temurin-11-jre-alpine-
+name: Continuous Delivery
+on:
+  repository_dispatch:
+    types: trigger-ga___docker-cd.yml
